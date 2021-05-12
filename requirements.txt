@@ -1,0 +1,7 @@
+tqdm==4.49.0
+transformers==4.5.1
+jsonpickle==2.0.0
+torch==1.7.1+cu110
+numpy==1.19.5
+scikit_learn==0.24.2
+tensorboardX==2.2
