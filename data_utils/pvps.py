@@ -21,11 +21,11 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Tuple, List, Union, Dict
-from transformers import PreTrainedTokenizer, GPT2Tokenizer, RobertaTokenizer
+from transformers import PreTrainedTokenizer, GPT2Tokenizer
 
 from utils import InputExample, get_verbalization_ids
 
-logger = logging.getLogger('SuperGLUE-pvp')
+logger = logging.getLogger('pvps')
 
 FilledPattern = Tuple[List[Union[str, Tuple[str, bool]]],
                       List[Union[str, Tuple[str, bool]]]]
@@ -651,7 +651,7 @@ class Sst2PVP(PVP):
 
     PATTERN = ['text_a', 'It', 'was', 'self.mask', '.']
 
-    BLOCK_FLAG = [0, 1, 1, 0]
+    BLOCK_FLAG = [0, 1, 1, 0, 1]
 
     def get_parts(self, example: InputExample) -> FilledPattern:
         text_a = self.shortenable(example.text_a)
@@ -722,6 +722,36 @@ class ColaPVP(PVP):
     def verbalize(self, label) -> List[str]:
         return ColaPVP.VERBALIZER[label]
 
+
+class Sst5PVP(PVP):
+    VERBALIZER = {
+        "0": ["terrible"],
+        "1": ["bad"],
+        "2": ["okay"],
+        "3": ["good"],
+        "4": ["great"]
+    }
+
+    PATTERN = ['text_a', 'It', 'was', 'self.mask', '.']
+
+    BLOCK_FLAG = [0, 1, 1, 0, 1]
+
+    def get_parts(self, example: InputExample) -> FilledPattern:
+        text_a = self.shortenable(example.text_a)
+
+        # few-shot
+        string_list_a = [text_a, 'It', 'was', self.mask, '.']
+        string_list_b = []
+        block_flag_a = self.BLOCK_FLAG
+        block_flag_b = []
+        assert len(string_list_a) == len(block_flag_a)
+        assert len(string_list_b) == len(block_flag_b)
+        return string_list_a, string_list_b, block_flag_a, block_flag_b
+
+    def verbalize(self, label) -> List[str]:
+        return Sst5PVP.VERBALIZER[label]
+
+
 PVPS = {
     # Super GLUE PVPs
     'rte': RtePVP,
@@ -734,5 +764,6 @@ PVPS = {
     # GLUE PVPs
     'sst-2': Sst2PVP,
     'mnli': MnliPVP,
-    'cola': ColaPVP
+    'cola': ColaPVP,
+    'sst-5': Sst5PVP
 }

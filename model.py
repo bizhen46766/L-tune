@@ -417,7 +417,7 @@ class TransformerModelWrapper(object):
                                 logger.info("best_dev_acc: %.4f | best_dev_f1: %.4f | best_global_step: %d" %
                                             (best_dev_acc, best_dev_f1, best_global_step))
 
-                        elif self.config.task_name in ["rte", "wic", "boolq", "wsc", "copa", "sst-2", "mnli"]:
+                        elif self.config.task_name in ["rte", "wic", "boolq", "wsc", "copa", "sst-2", "mnli", "sst-5"]:
                             if dev_scores["acc"] >= best_dev_acc:
                                 is_best = True
                                 if dev_scores["acc"] > best_dev_acc:
@@ -638,8 +638,8 @@ class TransformerModelWrapper(object):
         model = self.model.module if hasattr(
             self.model, 'module') else self.model
 
-        # TODO: here we only use word embeddings. This is NOT correct!
-        raw_embeds = model.model.get_input_embeddings()(input_ids)
+        word_embeddings = model.model.get_input_embeddings()
+        raw_embeds = word_embeddings(input_ids)
 
         replace_embeds = model.prompt_embeddings(
             torch.LongTensor(list(range(model.prompt_length))).cuda())
@@ -661,8 +661,8 @@ class TransformerModelWrapper(object):
             replace_embeds = None
 
         elif self.config.prompt_encoder_type == "inner":
-            replace_embeds = self.encoder.get_replace_embeds(
-                input_ids, block_flag, model.model.get_input_embeddings())
+            # assert set(self.encoder.pattern_convert.keys()) == set(input_ids[torch.where(block_flag==1)].tolist())
+            replace_embeds = self.encoder.get_replace_embeds(word_embeddings)
 
         else:
             raise ValueError("unknown prompt_encoder_type.")

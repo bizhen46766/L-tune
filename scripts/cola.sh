@@ -14,7 +14,6 @@ python3 cli.py \
 --pet_gradient_accumulation_steps 1 \
 --pet_max_seq_length 128 \
 --pet_max_steps 250 \
---pattern_ids 3 \
 --learning_rate 1e-4 \
 --eval_set "test" \
 --prompt_encoder_type "inner"
@@ -64,3 +63,4 @@ python3 cli.py \
 # matt-all-p: 0.09640919955955589 +- 0.08492199664559674
 
 # Inner encoder (1 stage)
+# Yes!

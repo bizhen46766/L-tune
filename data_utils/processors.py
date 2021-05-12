@@ -25,7 +25,7 @@ from typing import List, Dict, Callable
 
 from utils import InputExample
 
-logger = logging.getLogger('SuperGLUE-processor')
+logger = logging.getLogger('processors')
 
 
 def _shuffle_and_restrict(examples: List[InputExample], num_examples: int, seed: int = 42) -> List[InputExample]:
@@ -689,6 +689,44 @@ class ColaProcessor(DataProcessor):
         return examples
 
 
+class Sst5Processor(DataProcessor):
+    """Processor for the SST-5 data set (GLUE)."""
+
+    def get_train_examples(self, data_dir):
+        return self._create_examples(os.path.join(data_dir, "train.csv"), "train")
+
+    def get_dev_examples(self, data_dir):
+        return self._create_examples(os.path.join(data_dir, "dev.csv"), "dev")
+
+    def get_test_examples(self, data_dir):
+        return self._create_examples(os.path.join(data_dir, "test.csv"), "test")
+
+    def get_dev32_examples(self, data_dir):
+        # Not implemented
+        return self.get_dev_examples(data_dir)
+
+    def get_unlabeled_examples(self, data_dir):
+        # Not implemented
+        return self.get_test_examples(data_dir)
+
+    def get_labels(self):
+        return ["0", "1", "2", "3", "4"]
+
+    def _create_examples(self, path: str, set_type: str) -> List[InputExample]:
+        examples = []
+
+        with open(path, encoding='utf8') as f:
+            for i, line in enumerate(f.readlines()):
+                line = line.rstrip()
+                guid = f"{set_type}-{i}"
+                text_a = line[2:]
+                label = line[0]
+                examples.append(InputExample(
+                    guid=guid, text_a=text_a, label=label))
+
+        return examples
+
+
 PROCESSORS = {
     # Super-GLUE
     "wic": WicProcessor,
@@ -701,10 +739,10 @@ PROCESSORS = {
     "record": RecordProcessor,
 
     # GLUE
-    # from transformers import glue_processors
     "sst-2": Sst2Processor,
     "mnli": MnliProcessor,
     "cola": ColaProcessor,
+    "sst-5": Sst5Processor,
     # "mnli-mm": MnliMismatchedProcessor,
     # "mrpc": MrpcProcessor,
     # "sts-b": StsbProcessor,

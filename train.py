@@ -140,15 +140,15 @@ def train_pet(args):
                 for metric, value in dev_result['scores'].items():
                     dev_results[metric][pattern_id].append(value)
 
-                logger.info("=== OVERALL RESULTS ===")
-                write_results(os.path.join(
-                    args.output_dir, 'result_test.txt'), results, dev_results)
-
             # Clear cache
-            if not args.do_eval:
-                wrapper.model = None
-                wrapper = None
-                torch.cuda.empty_cache()
+            wrapper.model = None
+            wrapper = None
+            torch.cuda.empty_cache()
+
+        if args.do_eval:
+            logger.info("=== OVERALL RESULTS ===")
+            write_results(os.path.join(
+                args.output_dir, 'result_test.txt'), results, dev_results)
 
 
 def train_single_model(train_data: List[InputExample],
