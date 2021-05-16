@@ -38,23 +38,9 @@ class TrainConfig(PetConfig):
                  adam_epsilon: float = 1e-8,
                  warmup_steps: int = 0,
                  max_grad_norm: float = 1,
-                 alpha: float = 0.9999):
-        """
-        Create a new training config.
-
-        :param device: the device to use ('cpu' or 'gpu')
-        :param per_gpu_train_batch_size: the number of labeled training examples per batch and gpu
-        :param n_gpu: the number of gpus to use
-        :param num_train_epochs: the number of epochs to train for
-        :param max_steps: the maximum number of steps to train for (overrides ``num_train_epochs``)
-        :param gradient_accumulation_steps: the number of steps to accumulate gradients for before performing an update
-        :param weight_decay: the weight decay to use
-        :param learning_rate: the maximum learning rate to use
-        :param adam_epsilon: the epsilon value for Adam
-        :param warmup_steps: the number of warmup steps to perform before reaching the maximum learning rate
-        :param max_grad_norm: the maximum norm for the gradient
-        :param alpha: the alpha parameter for auxiliary language modeling
-        """
+                 alpha: float = 0.9999,
+                 early_stop_epochs: int = 10,
+                 two_stage_train: bool = False):
         self.device = device
         self.per_gpu_train_batch_size = per_gpu_train_batch_size
         self.n_gpu = n_gpu
@@ -67,6 +53,8 @@ class TrainConfig(PetConfig):
         self.warmup_steps = warmup_steps
         self.max_grad_norm = max_grad_norm
         self.alpha = alpha
+        self.early_stop_epochs = early_stop_epochs
+        self.two_stage_train = two_stage_train
 
 
 class EvalConfig(PetConfig):
@@ -146,7 +134,9 @@ def load_pet_configs(args) -> Tuple[WrapperConfig, TrainConfig, EvalConfig]:
                             adam_epsilon=args.adam_epsilon,
                             warmup_steps=args.warmup_steps,
                             max_grad_norm=args.max_grad_norm,
-                            alpha=args.alpha)
+                            alpha=args.alpha,
+                            early_stop_epochs=args.early_stop_epochs,
+                            two_stage_train=args.two_stage_train)
 
     eval_cfg = EvalConfig(device=args.device,
                           n_gpu=args.n_gpu,

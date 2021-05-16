@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2 &&
+export CUDA_VISIBLE_DEVICES=0 &&
 
 python3 cli.py \
 --data_dir data/k-shot/SST-2/16-13 \
@@ -6,7 +6,7 @@ python3 cli.py \
 --model_name_or_path albert-xxlarge-v2 \
 --cache_dir pretrain/albert-xxlarge-v2 \
 --task_name sst-2 \
---output_dir output/sst-2 \
+--output_dir output/sst-2-lstm \
 --do_eval \
 --do_train \
 --pet_per_gpu_eval_batch_size 8 \

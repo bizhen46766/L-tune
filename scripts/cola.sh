@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2 &&
+export CUDA_VISIBLE_DEVICES=0 &&
 
 python3 cli.py \
 --data_dir data/k-shot/CoLA/16-13 \
@@ -16,7 +16,8 @@ python3 cli.py \
 --pet_max_steps 250 \
 --learning_rate 1e-4 \
 --eval_set "test" \
---prompt_encoder_type "inner"
+--prompt_encoder_type "inner" \
+# --two_stage_train
 
 # Albert-xxlarge-v2
 
@@ -63,4 +64,20 @@ python3 cli.py \
 # matt-all-p: 0.09640919955955589 +- 0.08492199664559674
 
 # Inner encoder (1 stage)
-# Yes!
+
+
+# Inner encoder (2 stage)
+# INFO:utils:eval_results:
+# INFO:utils:matt-p1: 0.034744314304350286 +- 0.014785237013213177
+# INFO:utils:matt-all-p: 0.034744314304350286 +- 0.014785237013213177
+# INFO:utils:dev_results:
+# INFO:utils:matt-p1: 0.11402373936547473 +- 0.06656417570839829
+# INFO:utils:matt-all-p: 0.11402373936547473 +- 0.06656417570839829
+
+# Forget to remove the handle in the 2nd stage
+# INFO:utils:eval_results:
+# INFO:utils:matt-p1: 0.01935906539478563 +- 0.005234936322441165
+# INFO:utils:matt-all-p: 0.01935906539478563 +- 0.005234936322441165
+# INFO:utils:dev_results:
+# INFO:utils:matt-p1: 0.16116727332092007 +- 0.035710016143793634
+# INFO:utils:matt-all-p: 0.16116727332092007 +- 0.035710016143793634

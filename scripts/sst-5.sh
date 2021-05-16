@@ -6,7 +6,7 @@ python3 cli.py \
 --model_name_or_path roberta-large \
 --cache_dir pretrain/roberta-large \
 --task_name sst-5 \
---output_dir output/sst-5 \
+--output_dir output/sst-5-inner-2-new \
 --do_eval \
 --do_train \
 --pet_per_gpu_eval_batch_size 8 \
@@ -16,7 +16,8 @@ python3 cli.py \
 --pet_max_steps 250 \
 --learning_rate 1e-4 \
 --eval_set "test" \
---prompt_encoder_type "none"
+--prompt_encoder_type "inner" \
+--two_stage_train
 
 
 # Albert-xxlarge-v2
@@ -31,3 +32,37 @@ python3 cli.py \
 
 # RoBERTa-large
 
+# None encoder
+# INFO:train:=== OVERALL RESULTS ===
+# INFO:utils:eval_results:
+# INFO:utils:acc-p1: 0.4689291101055807 +- 0.011802353037399486
+# INFO:utils:acc-all-p: 0.4689291101055807 +- 0.011802353037399486
+# INFO:utils:dev_results:
+# INFO:utils:acc-p1: 0.5625 +- 0.03307189138830737
+# INFO:utils:acc-all-p: 0.5625 +- 0.03307189138830737
+
+# LSTM encoder
+# INFO:train:eval_results:
+# INFO:train:{'acc': 0.48733031674208144}
+# INFO:train:dev_results:
+# INFO:train:{'acc': 0.6125}
+# INFO:train:=== OVERALL RESULTS ===
+# INFO:utils:eval_results:
+# INFO:utils:acc-p1: 0.46576168929110107 +- 0.021493609585919893
+# INFO:utils:acc-all-p: 0.46576168929110107 +- 0.021493609585919893
+# INFO:utils:dev_results:
+# INFO:utils:acc-p1: 0.5708333333333333 +- 0.04389855730355308
+# INFO:utils:acc-all-p: 0.5708333333333333 +- 0.04389855730355308
+
+# Inner encoder
+# INFO:train:eval_results:
+# INFO:train:{'acc': 0.38190045248868776}
+# INFO:train:dev_results:
+# INFO:train:{'acc': 0.4}
+# INFO:train:=== OVERALL RESULTS ===
+# INFO:utils:eval_results:
+# INFO:utils:acc-p1: 0.3904977375565611 +- 0.007718878782457913
+# INFO:utils:acc-all-p: 0.3904977375565611 +- 0.007718878782457913
+# INFO:utils:dev_results:
+# INFO:utils:acc-p1: 0.39166666666666666 +- 0.007216878364870329
+# INFO:utils:acc-all-p: 0.39166666666666666 +- 0.007216878364870329

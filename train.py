@@ -26,7 +26,7 @@ from utils import write_results, save_logits, save_predictions, set_seed, InputE
 logger = logging.getLogger('train')
 
 
-def train_pet(args):
+def train_pet(args) -> List:
     # Load configs
     model_config, train_config, eval_config = load_pet_configs(args)
 
@@ -38,17 +38,23 @@ def train_pet(args):
     dev_data = load_examples(args.task_name, args.data_dir, DEV32_SET,
                              num_examples=args.dev_examples, split_examples_evenly=args.split_examples_evenly)
 
-    results = defaultdict(lambda: defaultdict(list))
-    dev_results = defaultdict(lambda: defaultdict(list))
     set_seed(args.seed)
 
-    # Iterates through all patterns and repeat training
+    # Record all evaluation results on dev & eval set
+    all_result = []
+    dev_result_all = defaultdict(lambda: defaultdict(list))
+    eval_result_all = defaultdict(lambda: defaultdict(list))
+    # In 2 stage training, the 1st stage evaluations should also be recorded
+    if args.do_train and args.do_eval and args.two_stage_train:
+        dev_stage1_all = defaultdict(lambda: defaultdict(list))
+        eval_stage1_all = defaultdict(lambda: defaultdict(list))
+
+    # Iterates through all patterns
     for pattern_id in args.pattern_ids:
+        # Repeat training
         for iteration in range(args.pet_repetitions):
-
-            model_config.pattern_id = pattern_id
             results_dict = {}
-
+            model_config.pattern_id = pattern_id
             pattern_iter_output_dir = "{}/p{}-i{}".format(
                 args.output_dir, pattern_id, iteration)
 
@@ -62,34 +68,37 @@ def train_pet(args):
             assert model_config.pattern_id is not None, 'A pattern_id must be set for initializing a new PET model'
             wrapper = TransformerModelWrapper(model_config)
 
-            ##################################################
             # Training
+            logger.info('--- Start iteration %d ---' % iteration)
             if args.do_train:
-
                 if not args.two_stage_train:
                     # Single stage training
+                    logger.info('=== Start training ===')
                     results_dict.update(train_single_model(train_data, eval_data, dev_data, pattern_iter_output_dir,
                                                            wrapper, train_config, eval_config))
-
-                    with open(os.path.join(pattern_iter_output_dir, 'results.txt'), 'w') as fh:
-                        fh.write(str(results_dict))
-
+                    evaluate_single_model(pattern_id, pattern_iter_output_dir, eval_data,
+                                          dev_data, eval_config, results_dict, dev_result_all, eval_result_all)
+                    with open(os.path.join(pattern_iter_output_dir, 'results.json'), 'w') as fh:
+                        json.dump(results_dict, fh)
                 else:
                     # Two stage training
                     # 1. Only train prompts and label tokens
-                    logger.info('Start training stage 1:')
+                    logger.info('=== Start training stage 1 ===')
                     results_dict.update(train_single_model(train_data, eval_data, dev_data, pattern_iter_output_dir,
                                                            wrapper, train_config, eval_config, stage=1))
-                    with open(os.path.join(pattern_iter_output_dir, 'results_stage1.txt'), 'w') as fh:
-                        fh.write(str(results_dict))
+                    evaluate_single_model(pattern_id, pattern_iter_output_dir, eval_data,
+                                          dev_data, eval_config, results_dict, dev_stage1_all, eval_stage1_all)
+                    with open(os.path.join(pattern_iter_output_dir, 'results_stage1.json'), 'w') as fh:
+                        json.dump(results_dict, fh)
 
                     # 2. Train full model
-                    logger.info('Start training stage 2:')
+                    logger.info('=== Start training stage 2 ===')
                     results_dict.update(train_single_model(train_data, eval_data, dev_data, pattern_iter_output_dir,
                                                            wrapper, train_config, eval_config, stage=2))
-
-                    with open(os.path.join(pattern_iter_output_dir, 'results_stage2.txt'), 'w') as fh:
-                        fh.write(str(results_dict))
+                    evaluate_single_model(pattern_id, pattern_iter_output_dir, eval_data,
+                                          dev_data, eval_config, results_dict, dev_result_all, eval_result_all)
+                    with open(os.path.join(pattern_iter_output_dir, 'results.json'), 'w') as fh:
+                        json.dump(results_dict, fh)
 
                 # Save configs
                 train_config.save(os.path.join(
@@ -98,57 +107,30 @@ def train_pet(args):
                     pattern_iter_output_dir, 'eval_config.json'))
                 logger.info("Saving complete")
 
-            ##################################################
-            # Evaluation
-            if args.do_eval:
-                logger.info("Starting evaluation...")
-
-                # if not wrapper:
-                wrapper = TransformerModelWrapper.from_pretrained(
-                    pattern_iter_output_dir)
-
-                eval_result = wrapper.eval(
-                    eval_data, eval_config.per_gpu_eval_batch_size, eval_config.n_gpu, eval_config.metrics)
-                dev_result = wrapper.eval(
-                    dev_data, eval_config.per_gpu_eval_batch_size, eval_config.n_gpu, eval_config.metrics)
-
-                save_predictions(os.path.join(
-                    pattern_iter_output_dir, 'eval_predictions.jsonl'), wrapper, eval_result)
-                save_logits(os.path.join(pattern_iter_output_dir,
-                            'eval_logits.txt'), eval_result['logits'])
-
-                save_predictions(os.path.join(
-                    pattern_iter_output_dir, 'dev_predictions.jsonl'), wrapper, dev_result)
-                save_logits(os.path.join(pattern_iter_output_dir,
-                            'dev_logits.txt'), dev_result['logits'])
-
-                logger.info(
-                    "--- RESULT (pattern_id={}, iteration={}) ---".format(pattern_id, iteration))
-                logger.info("eval_results:")
-                logger.info(eval_result['scores'])
-                logger.info("dev_results:")
-                logger.info(dev_result['scores'])
-
-                results_dict['eval_set_after_training'] = eval_result['scores']
-                results_dict['dev_set_after_training'] = dev_result['scores']
+            # Do evaluation only
+            elif args.do_eval:
+                evaluate_single_model(pattern_id, pattern_iter_output_dir, eval_data,
+                                      dev_data, eval_config, results_dict, dev_result_all, eval_result_all)
+                # Write overall results
                 with open(os.path.join(pattern_iter_output_dir, 'results.json'), 'w') as fh:
                     json.dump(results_dict, fh)
-
-                for metric, value in eval_result['scores'].items():
-                    results[metric][pattern_id].append(value)
-
-                for metric, value in dev_result['scores'].items():
-                    dev_results[metric][pattern_id].append(value)
 
             # Clear cache
             wrapper.model = None
             wrapper = None
             torch.cuda.empty_cache()
 
-        if args.do_eval:
-            logger.info("=== OVERALL RESULTS ===")
-            write_results(os.path.join(
-                args.output_dir, 'result_test.txt'), results, dev_results)
+    # Calculate average results of current pattern
+    if args.do_eval:
+        logger.info("=== OVERALL RESULTS ===")
+        if args.do_train and args.do_eval and args.two_stage_train:
+            # Store stage 1 results first
+            all_result.extend(write_results(os.path.join(
+                args.output_dir, 'result_stage1.txt'), dev_stage1_all, eval_stage1_all))
+        all_result.extend(write_results(os.path.join(
+            args.output_dir, 'result.txt'), dev_result_all, eval_result_all))
+
+    return all_result
 
 
 def train_single_model(train_data: List[InputExample],
@@ -171,9 +153,11 @@ def train_single_model(train_data: List[InputExample],
     results_dict = {}
 
     metric_name = load_metrics(model.config.task_name)[0]
-    results_dict['train_set_before_training'] = model.eval(
-        train_data, eval_config.per_gpu_eval_batch_size,
-        eval_config.n_gpu, eval_config.metrics)['scores'][metric_name]
+    train_scores = model.eval(train_data, eval_config.per_gpu_eval_batch_size,
+                              eval_config.n_gpu, eval_config.metrics)['scores']
+    results_dict['train_set_before_training'] = train_scores[metric_name]
+    logger.info("train_data performance before training: %s" %
+                str(train_scores))
 
     if not train_data:
         logger.warning('Training method was called without training examples')
@@ -195,14 +179,66 @@ def train_single_model(train_data: List[InputExample],
             warmup_steps=config.warmup_steps,
             max_grad_norm=config.max_grad_norm,
             alpha=config.alpha,
+            early_stop_epochs=config.early_stop_epochs,
             **kwargs
         )
         results_dict['global_step'] = global_step
         results_dict['average_loss'] = tr_loss
 
     model = TransformerModelWrapper.from_pretrained(pattern_iter_output_dir)
-    results_dict['train_set_after_training'] = model.eval(
-        train_data, eval_config.per_gpu_eval_batch_size,
-        eval_config.n_gpu, eval_config.metrics)['scores'][metric_name]
+    train_scores = model.eval(train_data, eval_config.per_gpu_eval_batch_size,
+                              eval_config.n_gpu, eval_config.metrics)['scores']
+    results_dict['train_set_after_training'] = train_scores[metric_name]
+    logger.info("train_data performance after training: %s" %
+                str(train_scores))
 
     return results_dict
+
+
+def evaluate_single_model(pattern_id,
+                          pattern_iter_output_dir,
+                          eval_data,
+                          dev_data,
+                          eval_config,
+                          results_dict,
+                          dev_result_all,
+                          eval_result_all,
+                          save_logits=False,
+                          save_predictions=False):
+    # if not wrapper:
+    wrapper = TransformerModelWrapper.from_pretrained(
+        pattern_iter_output_dir)
+
+    eval_result = wrapper.eval(
+        eval_data, eval_config.per_gpu_eval_batch_size, eval_config.n_gpu, eval_config.metrics)
+    dev_result = wrapper.eval(
+        dev_data, eval_config.per_gpu_eval_batch_size, eval_config.n_gpu, eval_config.metrics)
+
+    logger.info(
+        "--- RESULT (pattern_id={}) ---".format(pattern_id))
+    logger.info("eval results:")
+    logger.info(eval_result['scores'])
+    logger.info("dev results:")
+    logger.info(dev_result['scores'])
+
+    results_dict['eval_set'] = eval_result['scores']
+    results_dict['dev_set'] = dev_result['scores']
+
+    for metric, value in eval_result['scores'].items():
+        eval_result_all[metric][pattern_id].append(value)
+
+    for metric, value in dev_result['scores'].items():
+        dev_result_all[metric][pattern_id].append(value)
+
+    if save_logits:
+        save_logits(os.path.join(pattern_iter_output_dir,
+                    'eval_logits.txt'), eval_result['logits'])
+
+        save_logits(os.path.join(pattern_iter_output_dir,
+                    'dev_logits.txt'), dev_result['logits'])
+
+    if save_predictions:
+        save_predictions(os.path.join(
+            pattern_iter_output_dir, 'eval_predictions.jsonl'), wrapper, eval_result)
+        save_predictions(os.path.join(
+            pattern_iter_output_dir, 'dev_predictions.jsonl'), wrapper, dev_result)

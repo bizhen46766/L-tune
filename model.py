@@ -18,6 +18,7 @@ provides convenience methods for training and inference.
 import json
 import jsonpickle
 import os
+from datetime import datetime
 from typing import List, Dict, Optional
 
 import torch
@@ -27,11 +28,10 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import RandomSampler, DataLoader, SequentialSampler
 from tqdm import trange, tqdm
 from transformers import InputExample, AdamW, get_linear_schedule_with_warmup, \
-    BertForMaskedLM, RobertaForMaskedLM, BertConfig, BertTokenizer, RobertaConfig, \
-    RobertaTokenizer, AlbertForMaskedLM, AlbertTokenizer, AlbertConfig
+    AutoModelForMaskedLM, AutoConfig, AutoTokenizer
 
 import logging
-from data_utils import PVPS, load_task_helper, evaluate_results
+from data_utils import PVPS, load_task_helper, load_metrics, evaluate_results
 from config import WrapperConfig, EvalConfig
 from utils import InputFeatures, DictDataset
 from encoder import PromptEncoder
@@ -40,12 +40,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('model')
 
 CONFIG_NAME = 'wrapper_config.json'
-
-MODEL_CLASSES = {
-    'bert': {'config': BertConfig, 'tokenizer': BertTokenizer, 'model': BertForMaskedLM},
-    'roberta': {'config': RobertaConfig, 'tokenizer': RobertaTokenizer, 'model': RobertaForMaskedLM},
-    'albert': {'config': AlbertConfig, 'tokenizer': AlbertTokenizer, 'model': AlbertForMaskedLM}
-}
 
 
 class ContinuousPrompt(nn.Module):
@@ -63,16 +57,15 @@ class ContinuousPrompt(nn.Module):
                 prompt_length += len(tokenizer.tokenize(pvp.PATTERN[idx]))
         self.prompt_length = prompt_length
 
-        config_class = MODEL_CLASSES[self.config.model_type]['config']
-        model_config = config_class.from_pretrained(
+        # config_class = MODEL_CLASSES[self.config.model_type]['config']
+        model_config = AutoConfig.from_pretrained(
             config.model_name_or_path,
             num_labels=len(config.label_list),
             finetuning_task=config.task_name,
-            cache_dir=config.cache_dir if config.cache_dir else None,
-            use_cache=False)
+            cache_dir=config.cache_dir if config.cache_dir else None)
 
-        model_class = MODEL_CLASSES[self.config.model_type]['model']
-        self.model = model_class.from_pretrained(
+        # model_class = MODEL_CLASSES[self.config.model_type]['model']
+        self.model = AutoModelForMaskedLM.from_pretrained(
             config.model_name_or_path,
             config=model_config,
             cache_dir=config.cache_dir if config.cache_dir else None)
@@ -110,10 +103,11 @@ class TransformerModelWrapper(object):
     def __init__(self, config: WrapperConfig):
         self.config = config
 
-        tokenizer_class = MODEL_CLASSES[config.model_type]['tokenizer']
-        self.tokenizer = tokenizer_class.from_pretrained(
+        # tokenizer_class = MODEL_CLASSES[config.model_type]['tokenizer']
+        self.tokenizer = AutoTokenizer.from_pretrained(
             config.model_name_or_path,
-            cache_dir=config.cache_dir if config.cache_dir else None)
+            cache_dir=config.cache_dir if config.cache_dir else None,
+            use_fast=False)
 
         self.pvp = PVPS[config.task_name](self, config.pattern_id)
         self.model = ContinuousPrompt(config, self.tokenizer, self.pvp)
@@ -131,7 +125,7 @@ class TransformerModelWrapper(object):
         self.model.cuda()
 
     def save(self, path: str) -> None:
-        logger.info("Saving models.")
+        logger.info("Saving trained model at %s..." % path)
         model_to_save = self.model.module if hasattr(
             self.model, 'module') else self.model
 
@@ -164,17 +158,12 @@ class TransformerModelWrapper(object):
 
         wrapper = TransformerModelWrapper.__new__(TransformerModelWrapper)
         wrapper.config = wrapper._load_config(path)
-
-        tokenizer_class = MODEL_CLASSES[wrapper.config.model_type]['tokenizer']
-        wrapper.tokenizer = tokenizer_class.from_pretrained(path)
-
+        wrapper.tokenizer = AutoTokenizer.from_pretrained(path, use_fast=False)
         wrapper.pvp = PVPS[wrapper.config.task_name](
             wrapper, wrapper.config.pattern_id)
-
         wrapper.model = ContinuousPrompt(
             wrapper.config, wrapper.tokenizer, wrapper.pvp)
-        model_class = MODEL_CLASSES[wrapper.config.model_type]['model']
-        wrapper.model.model = model_class.from_pretrained(path)
+        wrapper.model.model = AutoModelForMaskedLM.from_pretrained(path)
 
         # Load prompt embeddings
         save_path_file = os.path.join(path, "embeddings.pth")
@@ -231,25 +220,9 @@ class TransformerModelWrapper(object):
               adam_epsilon: float = 1e-8,
               warmup_steps=0,
               max_grad_norm: float = 1,
-              logging_steps: int = 50,
-              max_steps=-1, **kwargs):
-        """
-        Train the underlying language model.
-
-        :param train_data: the training examples to use
-        :param per_gpu_train_batch_size: the number of training examples per batch and gpu
-        :param n_gpu: the number of gpus to use
-        :param num_train_epochs: the number of epochs to train
-        :param gradient_accumulation_steps: the number of gradient accumulation steps before performing an update
-        :param weight_decay: the weight decay to use
-        :param learning_rate: the learning rate to use
-        :param adam_epsilon: epsilon parameter for the Adam optimizer
-        :param warmup_steps: the number of warmup steps
-        :param max_grad_norm: the maximum norm for the gradient
-        :param logging_steps: the number of steps after which logging information is printed
-        :param max_steps: the maximum number of training steps, overrides ``num_train_epochs``
-        :return: a tuple consisting of the total number of steps and the average training loss
-        """
+              max_steps=-1,
+              early_stop_epochs=10,
+              **kwargs):
 
         train_batch_size = per_gpu_train_batch_size * max(1, n_gpu)
         train_dataset = self._generate_dataset(train_data)
@@ -264,11 +237,6 @@ class TransformerModelWrapper(object):
         else:
             t_total = len(
                 train_dataloader) // gradient_accumulation_steps * num_train_epochs
-
-        print("\nnum_steps_per_dataset:", len(
-            train_dataloader) // gradient_accumulation_steps)
-        print("total_steps:", t_total)
-        print("num_train_epochs:", num_train_epochs)
 
         cur_model = self.model.module if hasattr(
             self.model, 'module') else self.model
@@ -331,29 +299,29 @@ class TransformerModelWrapper(object):
             scheduler_list.append(get_linear_schedule_with_warmup(
                 optimizer_list[0], num_warmup_steps=warmup_steps, num_training_steps=t_total))
 
-        writer = SummaryWriter(log_dir=os.path.join(
-            self.config.output_dir, "writer_logs"))
+        now = datetime.now()
+        writer = SummaryWriter(log_dir=os.path.join(self.config.output_dir, "writer_logs"),
+                               filename_suffix=now.strftime('%m-%d_%H:%M:%S'))
 
-        # TODO
-        best_dev_acc, best_dev_f1, best_dev_matt, best_loss = 0.0, 0.0, -1.0, 0.0
-        best_global_step, early_stop_epoch, global_step = 0, 0, 0
+        # Statistics in training
+        save_metric_name = load_metrics(self.config.task_name)[-1]
+        best_dev_metric, best_loss = -1.0, 0.0
+        best_global_step, early_stop_count, global_step = 0, 0, 0
         prev_loss, tr_loss, logging_loss = 0.0, 0.0, 0.0
-        self.model.zero_grad()
 
-        logger.info("dev_data performance before training.")
         dev_scores = self.eval(
             dev_data, eval_config.per_gpu_eval_batch_size, n_gpu, eval_config.metrics)['scores']
-        logger.info(dev_scores)
+        logger.info("dev_data performance before training: %s" %
+                    str(dev_scores))
 
-        logger.info("eval_data performance before training.")
-        dev_scores = self.eval(
-            dev_data, eval_config.per_gpu_eval_batch_size, n_gpu, eval_config.metrics)['scores']
-        logger.info(dev_scores)
+        eval_scores = self.eval(
+            eval_data, eval_config.per_gpu_eval_batch_size, n_gpu, eval_config.metrics)['scores']
+        logger.info("eval_data performance before training: %s" %
+                    str(eval_scores))
 
         train_iterator = trange(int(num_train_epochs), desc="Epoch")
         for _ in train_iterator:
-            epoch_iterator = tqdm(train_dataloader, desc="Iteration")
-            for step, batch in enumerate(epoch_iterator):
+            for step, batch in enumerate(train_dataloader):
                 self.model.train()
                 batch = {k: t.cuda() for k, t in batch.items()}
 
@@ -371,7 +339,6 @@ class TransformerModelWrapper(object):
                 tr_loss += loss.item()
 
                 if (step + 1) % gradient_accumulation_steps == 0:
-                    # TODO
                     writer.add_scalar(
                         "train_loss", (tr_loss - prev_loss), global_step=global_step)
                     prev_loss = tr_loss
@@ -383,92 +350,57 @@ class TransformerModelWrapper(object):
                         optimizer.step()
                         scheduler.step()
 
-                    self.model.zero_grad()
+                    self.model.zero_grad(set_to_none=True)
                     global_step += 1
 
-                    if logging_steps > 0 and global_step % logging_steps == 0:
-                        logs = {}
-                        loss_scalar = (tr_loss - logging_loss) / logging_steps
-                        learning_rate_scalar = scheduler.get_lr()[0]
-                        logs['learning_rate'] = learning_rate_scalar
-                        logs['loss'] = loss_scalar
-                        logging_loss = tr_loss
-                        print(json.dumps({**logs, **{'step': global_step}}))
-
-                    # TODO
+                    # Evaluate every some steps
                     if global_step % self.config.eval_every_step == 0:
                         dev_scores = self.eval(
                             dev_data, eval_config.per_gpu_eval_batch_size, n_gpu, eval_config.metrics)['scores']
-                        is_best = False
+                        # Record dev metric scores in tensorboard
+                        for metric, score in dev_scores.items():
+                            writer.add_scalar(
+                                'dev-' + metric, score, global_step=global_step)
+                        # Evaluate sample and save model on best performance
+                        if dev_scores[save_metric_name] >= best_dev_metric:
+                            if dev_scores[save_metric_name] > best_dev_metric:
+                                early_stop_count = 0
+                                logger.info("Best %s on dev: %.4f | global step: %d" % (
+                                    save_metric_name, best_dev_metric, best_global_step))
+                            else:
+                                early_stop_count += 1
+                                logger.info("Dev scores: %.4f | early_stop_count: %d" % (
+                                    dev_scores[save_metric_name], early_stop_count))
+                            # Record best statistics
+                            best_dev_metric = dev_scores[save_metric_name]
+                            best_global_step = global_step
+                            best_loss = tr_loss
 
-                        if self.config.task_name in ["cb", "record", "multirc"]:
-                            f1_str = "f1" if self.config.task_name != "cb" else "f1-macro"
-                            if dev_scores["acc"] >= best_dev_acc and dev_scores[f1_str] >= best_dev_f1:
-                                is_best = True
-                                if dev_scores["acc"] > best_dev_acc and dev_scores[f1_str] > best_dev_f1:
-                                    early_stop_epoch = 0
-                                else:
-                                    early_stop_epoch += 1
-
-                                best_dev_acc = dev_scores["acc"]
-                                best_dev_f1 = dev_scores[f1_str]
-                                best_global_step = global_step
-                                best_loss = tr_loss
-                                logger.info("best_dev_acc: %.4f | best_dev_f1: %.4f | best_global_step: %d" %
-                                            (best_dev_acc, best_dev_f1, best_global_step))
-
-                        elif self.config.task_name in ["rte", "wic", "boolq", "wsc", "copa", "sst-2", "mnli", "sst-5"]:
-                            if dev_scores["acc"] >= best_dev_acc:
-                                is_best = True
-                                if dev_scores["acc"] > best_dev_acc:
-                                    early_stop_epoch = 0
-                                else:
-                                    early_stop_epoch += 1
-
-                                best_dev_acc = dev_scores["acc"]
-                                best_global_step = global_step
-                                best_loss = tr_loss
-                                logger.info("best_dev_acc: %.4f | best_global_step: %d" %
-                                            (best_dev_acc, best_global_step))
-
-                        elif self.config.task_name in ["cola"]:
-                            if dev_scores["matt"] >= best_dev_matt:
-                                is_best = True
-                                if dev_scores["matt"] > best_dev_matt:
-                                    early_stop_epoch = 0
-                                else:
-                                    early_stop_epoch += 1
-
-                                best_dev_matt = dev_scores["matt"]
-                                best_global_step = global_step
-                                best_loss = tr_loss
-                                logger.info("best_dev_matt: %.4f | best_global_step: %d" %
-                                            (best_dev_matt, best_global_step))
-
-                        # Common operations if achieved best performance on dev set
-                        if is_best:
+                            # TODO: can also choose to save model only on higher scores
+                            # Save best model
                             self.save(pattern_iter_output_dir)
                             eval_scores = self.eval(
-                                dev_data, eval_config.per_gpu_eval_batch_size,
+                                eval_data, eval_config.per_gpu_eval_batch_size,
                                 n_gpu, eval_config.metrics)['scores']
-                            logger.info("Saving trained model at {}...".format(
-                                pattern_iter_output_dir))
-                            logger.info("eval_data performance:")
-                            logger.info(eval_scores)
+                            logger.info("eval_data performance: %s" %
+                                        str(eval_scores))
+                            # Record eval metric scores in tensorboard
+                            for metric, score in eval_scores.items():
+                                writer.add_scalar(
+                                    'eval-' + metric, score, global_step=global_step)
                         else:
-                            early_stop_epoch += 1
-                            logger.info(dev_scores)
-                            logger.info(early_stop_epoch)
+                            early_stop_count += 1
+                            logger.info("Dev scores: %.4f | early_stop_count: %d" % (
+                                dev_scores[save_metric_name], early_stop_count))
 
-                if 0 < max_steps < global_step or early_stop_epoch >= 10:
-                    epoch_iterator.close()
+                if 0 < max_steps < global_step or early_stop_count >= early_stop_epochs:
                     break
 
-            if 0 < max_steps < global_step or early_stop_epoch >= 10:
+            if 0 < max_steps < global_step or early_stop_count >= early_stop_epochs:
                 train_iterator.close()
                 break
 
-        # Is this step necessary?
+        # Is this step necessary? YES...
         if self.config.prompt_encoder_type == "inner" and kwargs.get('stage', 0) == 1:
             handle.remove()
 
@@ -572,10 +504,6 @@ class TransformerModelWrapper(object):
             'idx': torch.tensor([f.idx for f in features], dtype=torch.long),
             'block_flag': torch.tensor([f.block_flag for f in features], dtype=torch.long)
         }
-
-        # if self.config.prompt_encoder_type == "inner":
-        #     feature_dict['input_ids'] = self.encoder.convert_input_ids(
-        #         feature_dict['input_ids'], feature_dict['block_flag'])
 
         if self.task_helper:
             self.task_helper.add_features_to_dict(features, feature_dict)

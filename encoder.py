@@ -35,7 +35,7 @@ class PromptEncoder(object):
         assert len(pattern_token_set) < 50 and len(label_token_set) < 49
 
         # Convert tokens in manual prompt / label to unused tokens
-        # Note that `AlbertTokenizer` doesn't have a `vocab` attribute
+        # Note that `AlbertTokenizer` or `RobertaTokenizer` doesn't have a `vocab` attribute
         if hasattr(tokenizer, 'vocab') and '[unused0]' in tokenizer.vocab:
             # BERT
             self.pattern_convert = {token_id: tokenizer.vocab['[unused%s]' % idx]
@@ -52,6 +52,7 @@ class PromptEncoder(object):
                                   for idx, token_id in enumerate(label_token_set)}
 
         # Convert mlm logits to cls logits
+        self.vocab_size = tokenizer.vocab_size
         self.m2c_tensor = torch.tensor(
             list(self.label_convert.values()), dtype=torch.long)
 
@@ -76,7 +77,7 @@ class PromptEncoder(object):
         # Train certain tokens by multiply gradients with a mask
         trainable_ids = list(self.pattern_convert.values()) + \
             list(self.label_convert.values())
-        grad_mask = torch.zeros((len(tokenizer.vocab), 1), dtype=torch.float)
+        grad_mask = torch.zeros((self.vocab_size, 1), dtype=torch.float)
         grad_mask[trainable_ids, 0] = 1.0
 
         return model.get_input_embeddings().register_backward_hook(stop_gradient)

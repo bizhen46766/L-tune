@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2 &&
+export CUDA_VISIBLE_DEVICES=0 &&
 
 python3 cli.py \
 --data_dir data/FewGLUE_32dev/CB \
@@ -6,7 +6,7 @@ python3 cli.py \
 --model_name_or_path albert-xxlarge-v2 \
 --cache_dir pretrain/albert-xxlarge-v2 \
 --task_name cb \
---output_dir output/cb \
+--output_dir output/cb-none-new \
 --do_eval \
 --do_train \
 --pet_per_gpu_eval_batch_size 16 \
@@ -15,7 +15,7 @@ python3 cli.py \
 --pet_max_seq_length 256 \
 --pet_max_steps 250 \
 --pattern_ids 1 \
---prompt_encoder_type "inner"
+--prompt_encoder_type "none"
 
 # LSTM encoder
 # 2021-04-29 14:17:14,784 - INFO - modeling - --- RESULT (pattern_id=1, iteration=2) ---

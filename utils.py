@@ -176,9 +176,10 @@ def save_predictions(path: str, wrapper, results: Dict):
             fh.write(json.dumps(line) + '\n')
 
 
-def write_results(path: str, all_results: Dict, dev32_results: Dict):
+def write_results(path: str, dev_results: Dict, eval_results: Dict) -> List[Dict]:
+    dev_stat, eval_stat = {}, {}
     with open(path, 'w') as fh:
-        results = all_results
+        results = eval_results
         logger.info("eval_results:")
         fh.write("eval_results:" + '\n')
 
@@ -190,13 +191,17 @@ def write_results(path: str, all_results: Dict, dev32_results: Dict):
                     metric, pattern_id, mean, stdev)
                 logger.info(result_str)
                 fh.write(result_str + '\n')
+                # Record statistics in eval_stat
+                if pattern_id not in eval_stat:
+                    eval_stat[pattern_id] = {}
+                eval_stat[pattern_id][metric] = [mean, stdev]
 
         for metric in results.keys():
-            all_results = [result for pattern_results in results[metric].values()
-                           for result in pattern_results]
-            all_mean = statistics.mean(all_results)
+            eval_results = [result for pattern_results in results[metric].values()
+                            for result in pattern_results]
+            all_mean = statistics.mean(eval_results)
             all_stdev = statistics.stdev(
-                all_results) if len(all_results) > 1 else 0
+                eval_results) if len(eval_results) > 1 else 0
             result_str = "{}-all-p: {} +- {}".format(
                 metric, all_mean, all_stdev)
             logger.info(result_str)
@@ -205,25 +210,31 @@ def write_results(path: str, all_results: Dict, dev32_results: Dict):
         logger.info("dev_results:")
         fh.write("dev_results:" + '\n')
 
-        for metric in dev32_results.keys():
-            for pattern_id, values in dev32_results[metric].items():
+        for metric in dev_results.keys():
+            for pattern_id, values in dev_results[metric].items():
                 mean = statistics.mean(values)
                 stdev = statistics.stdev(values) if len(values) > 1 else 0
                 result_str = "{}-p{}: {} +- {}".format(
                     metric, pattern_id, mean, stdev)
                 logger.info(result_str)
                 fh.write(result_str + '\n')
+                # Record statistics in dev_stat
+                if pattern_id not in dev_stat:
+                    dev_stat[pattern_id] = {}
+                dev_stat[pattern_id][metric] = [mean, stdev]
 
-        for metric in dev32_results.keys():
-            all_results = [result for pattern_results in dev32_results[metric].values(
+        for metric in dev_results.keys():
+            eval_results = [result for pattern_results in dev_results[metric].values(
             ) for result in pattern_results]
-            all_mean = statistics.mean(all_results)
+            all_mean = statistics.mean(eval_results)
             all_stdev = statistics.stdev(
-                all_results) if len(all_results) > 1 else 0
+                eval_results) if len(eval_results) > 1 else 0
             result_str = "{}-all-p: {} +- {}".format(
                 metric, all_mean, all_stdev)
             logger.info(result_str)
             fh.write(result_str + '\n')
+
+        return dev_stat, eval_stat
 
 
 def get_verbalization_ids(word: str, tokenizer: PreTrainedTokenizer, force_single_token: bool) -> Union[int, List[int]]:

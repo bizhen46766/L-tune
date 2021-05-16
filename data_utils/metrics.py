@@ -46,7 +46,7 @@ def _exact_match(actuals: np.ndarray, predictions: np.ndarray, question_ids: np.
 def load_metrics(task_name):
     METRICS = {
         "cb": ["acc", "f1-macro"],
-        "multirc": ["acc", "f1", "em"],
+        "multirc": ["acc", "em", "f1"],
         "record": ["acc", "f1"],
         "cola": ["matt"]
     }
